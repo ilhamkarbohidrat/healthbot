@@ -4,6 +4,7 @@
  */
 
 const elChat = document.getElementById("chat");
+const elEmptyState = document.getElementById("empty-state");
 const elInput = document.getElementById("input-keluhan");
 const elTombolPeriksa = document.getElementById("btn-periksa");
 const elChip = document.querySelectorAll(".chip");
@@ -17,6 +18,7 @@ function waktuSekarang() {
 }
 
 function tambahBubbleUser(teks) {
+  if (elEmptyState) elEmptyState.style.display = "none";
   const bubble = document.createElement("div");
   bubble.className = "bubble bubble-user";
   bubble.textContent = teks;
@@ -108,10 +110,29 @@ function escapeHTML(str) {
   return div.innerHTML;
 }
 
+// Untuk mode "curhat" dan "umum" — jawaban ditampilkan sebagai bubble teks biasa,
+// bukan kartu triase.
+function buatBubbleBot(teks, mode) {
+  const bubble = document.createElement("div");
+  bubble.className = `bubble bubble-bot bubble-${mode === "curhat" ? "curhat" : "umum"}`;
+  bubble.textContent = teks;
+  return bubble;
+}
+
+function renderHasil(data) {
+  if (data.mode === "curhat" || data.mode === "umum") {
+    elChat.appendChild(buatBubbleBot(data.jawaban || "", data.mode));
+  } else {
+    const modeAman = data.sumber === "cadangan";
+    elChat.appendChild(buatKartuTriase(data, modeAman));
+  }
+}
+
 async function periksaKeluhan(teksKeluhan) {
   const keluhan = (teksKeluhan ?? "").trim();
 
   if (!keluhan) {
+    if (elEmptyState) elEmptyState.style.display = "none";
     elChat.appendChild(buatKartuTriase({ tingkat_urgensi: "KLINIK", ringkasan: "Permintaan tidak bisa diproses: Keluhan kosong", yang_harus_dilakukan: ["Tulis keluhanmu di kolom teks terlebih dahulu."] }, true));
     return;
   }
@@ -119,7 +140,7 @@ async function periksaKeluhan(teksKeluhan) {
   tambahBubbleUser(keluhan);
   elInput.value = "";
   elTombolPeriksa.disabled = true;
-  elTombolPeriksa.textContent = "Memeriksa...";
+  elTombolPeriksa.textContent = "Memproses...";
 
   try {
     const res = await fetch("/api/chat", {
@@ -134,17 +155,18 @@ async function periksaKeluhan(teksKeluhan) {
       throw new Error(data.error || "Gagal memproses permintaan");
     }
 
-    const modeAman = data.sumber === "cadangan";
-    elChat.appendChild(buatKartuTriase(data, modeAman));
+    renderHasil(data);
 
     // Simpan ke riwayat supaya AI punya konteks percakapan berikutnya.
+    const teksBalasan = data.mode === "curhat" || data.mode === "umum" ? data.jawaban : data.ringkasan;
     riwayat.push({ peran: "user", teks: keluhan });
-    riwayat.push({ peran: "bot", teks: data.ringkasan || "" });
+    riwayat.push({ peran: "bot", teks: teksBalasan || "" });
   } catch (err) {
     console.error("Gagal fetch:", err);
     elChat.appendChild(
       buatKartuTriase(
         {
+          mode: "triase",
           tingkat_urgensi: "KLINIK",
           ringkasan: "Koneksi ke server gagal. Supaya aman, anggap keluhan ini perlu diperiksa tenaga medis.",
           yang_harus_dilakukan: [
