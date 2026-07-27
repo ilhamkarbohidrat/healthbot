@@ -10,14 +10,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.GITHUB_TOKEN}`,
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "llama-3.3-70b-versatile",
         messages: [
           {
             role: "system",
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("GitHub Models error:", errText);
+      console.error("Groq API error:", errText);
       return res.status(502).json({ error: "Gagal mendapat respons dari model" });
     }
 
