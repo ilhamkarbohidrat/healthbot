@@ -6,12 +6,12 @@
  *   1. Cek red flag dengan aturan (rule-based). Kalau kena, langsung balas IGD
  *      tanpa menunggu AI. Ini supaya kasus gawat tidak pernah bergantung pada
  *      benar atau salahnya model.
- *   2. Kalau lolos, kirim ke Gemini dengan system prompt ketat + skema JSON.
+ *   2. Kalau lolos, kirim ke Groq dengan system prompt ketat + instruksi JSON.
  *   3. Kalau apa pun gagal, balas aman ke tingkat KLINIK. Tidak pernah diam.
  */
 
-const MODEL = "gemini-2.5-flash";
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const MODEL = "llama-3.3-70b-versatile";
+const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
 /* ------------------------------------------------------------------ */
 /* LAPIS 1 - DETEKTOR RED FLAG (tanpa AI)                              */
@@ -185,7 +185,7 @@ function cekRedFlag(pesan) {
 }
 
 /* ------------------------------------------------------------------ */
-/* LAPIS 2 - MODEL AI                                                  */
+/* LAPIS 2 - MODEL AI (Groq)                                           */
 /* ------------------------------------------------------------------ */
 
 const SYSTEM_PROMPT = `Kamu adalah HealthBot, asisten skrining awal kesehatan berbahasa Indonesia. Kamu BUKAN dokter dan tidak menegakkan diagnosis.
@@ -208,44 +208,15 @@ TINGKAT URGENSI:
 - KLINIK: sebaiknya diperiksa tenaga medis dalam 1 sampai 2 hari di puskesmas, klinik, atau dokter umum.
 - IGD: perlu penanganan segera hari ini juga.
 
-Jawab hanya dalam format JSON sesuai skema yang diberikan. Jangan menambahkan teks di luar JSON.`;
-
-const SKEMA_JAWABAN = {
-  type: "OBJECT",
-  properties: {
-    tingkat_urgensi: { type: "STRING", enum: ["MANDIRI", "KLINIK", "IGD"] },
-    ringkasan: { type: "STRING" },
-    kemungkinan_kondisi: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          nama: { type: "STRING" },
-          catatan: { type: "STRING" },
-        },
-        required: ["nama", "catatan"],
-      },
-    },
-    yang_harus_dilakukan: { type: "ARRAY", items: { type: "STRING" } },
-    tanda_bahaya: { type: "ARRAY", items: { type: "STRING" } },
-    pertanyaan_lanjutan: { type: "ARRAY", items: { type: "STRING" } },
-  },
-  required: [
-    "tingkat_urgensi",
-    "ringkasan",
-    "kemungkinan_kondisi",
-    "yang_harus_dilakukan",
-    "tanda_bahaya",
-    "pertanyaan_lanjutan",
-  ],
-};
-
-const PENGATURAN_KEAMANAN = [
-  "HARM_CATEGORY_HARASSMENT",
-  "HARM_CATEGORY_HATE_SPEECH",
-  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-  "HARM_CATEGORY_DANGEROUS_CONTENT",
-].map((category) => ({ category, threshold: "BLOCK_ONLY_HIGH" }));
+Jawab HANYA dalam format JSON, tanpa teks lain di luar JSON, dengan struktur PERSIS seperti ini:
+{
+  "tingkat_urgensi": "MANDIRI" | "KLINIK" | "IGD",
+  "ringkasan": string,
+  "kemungkinan_kondisi": [ { "nama": string, "catatan": string }, ... maksimal 3 ],
+  "yang_harus_dilakukan": [ string, ... ],
+  "tanda_bahaya": [ string, ... ],
+  "pertanyaan_lanjutan": [ string, ... maksimal 3 ]
+}`;
 
 function jawabanCadangan(alasan) {
   return {
@@ -270,45 +241,41 @@ function jawabanCadangan(alasan) {
   };
 }
 
-async function tanyaGemini(pesan, riwayat, apiKey) {
-  const contents = [];
+async function tanyaGroq(pesan, riwayat, apiKey) {
+  const messages = [{ role: "system", content: SYSTEM_PROMPT }];
 
   for (const item of Array.isArray(riwayat) ? riwayat.slice(-8) : []) {
     if (!item || !item.teks) continue;
-    contents.push({
-      role: item.peran === "bot" ? "model" : "user",
-      parts: [{ text: String(item.teks).slice(0, 2000) }],
+    messages.push({
+      role: item.peran === "bot" ? "assistant" : "user",
+      content: String(item.teks).slice(0, 2000),
     });
   }
-  contents.push({ role: "user", parts: [{ text: String(pesan).slice(0, 2000) }] });
+  messages.push({ role: "user", content: String(pesan).slice(0, 2000) });
 
   const respons = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents,
-      safetySettings: PENGATURAN_KEAMANAN,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 1200,
-        responseMimeType: "application/json",
-        responseSchema: SKEMA_JAWABAN,
-      },
+      model: MODEL,
+      messages,
+      temperature: 0.3,
+      max_tokens: 1200,
+      response_format: { type: "json_object" },
     }),
   });
 
   if (!respons.ok) {
     const detail = await respons.text();
-    throw new Error(`Gemini ${respons.status}: ${detail.slice(0, 300)}`);
+    throw new Error(`Groq ${respons.status}: ${detail.slice(0, 300)}`);
   }
 
   const data = await respons.json();
-  const teks = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!teks) throw new Error("Jawaban model kosong atau diblokir filter keamanan.");
+  const teks = data?.choices?.[0]?.message?.content;
+  if (!teks) throw new Error("Jawaban model kosong.");
 
   const hasil = JSON.parse(teks);
   hasil.sumber = "model";
@@ -325,9 +292,9 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    res.status(200).json(jawabanCadangan("GEMINI_API_KEY belum diatur di Vercel."));
+    res.status(200).json(jawabanCadangan("GROQ_API_KEY belum diatur di Vercel."));
     return;
   }
 
@@ -353,7 +320,7 @@ module.exports = async (req, res) => {
 
   // Lapis 2.
   try {
-    const hasil = await tanyaGemini(pesan, riwayat, apiKey);
+    const hasil = await tanyaGroq(pesan, riwayat, apiKey);
     res.status(200).json(hasil);
   } catch (err) {
     console.error("[healthbot]", err.message);
