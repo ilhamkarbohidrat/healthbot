@@ -250,7 +250,37 @@ Format JSON mode ini:
   "jawaban": string
 }
 
-PENTING: pilih mode berdasarkan isi pesan terakhir pengguna. Selalu keluarkan JSON valid sesuai salah satu dari ketiga struktur di atas, tidak ada field tambahan, tidak ada teks di luar JSON.`;
+PENTING: pilih mode berdasarkan isi pesan terakhir pengguna. Selalu keluarkan JSON valid sesuai salah satu dari ketiga struktur di atas, tidak ada field tambahan, tidak ada teks di luar JSON.
+
+CONTOH PEMILIHAN MODE (ikuti pola ini, jangan selalu anggap semua pesan berkaitan dengan kesehatan):
+- "5 x 6 berapa?" -> mode umum
+- "siapa presiden pertama Indonesia?" -> mode umum
+- "eh nama kamu siapa?" -> mode umum
+- "menurut kamu besok bakal hujan gak?" -> mode umum
+- "aku capek banget sama tugas sekolah hari ini" -> mode curhat
+- "aku ngerasa sendirian belakangan ini" -> mode curhat
+- "demam 2 hari, batuk kering, badan pegal" -> mode triase
+- "perut sakit banget dari tadi pagi" -> mode triase
+
+Jangan pernah menganggap pertanyaan pengetahuan umum atau matematika sebagai keluhan kesehatan hanya karena kamu bernama HealthBot.`;
+
+// Heuristik ringan: dipakai HANYA untuk menentukan jenis fallback yang tepat
+// saat AI gagal merespons, bukan untuk menggantikan penilaian AI.
+const KATA_TERKAIT_KESEHATAN =
+  /demam|panas badan|sakit|nyeri|pusing|mual|muntah|batuk|pilek|diare|mencret|gatal|bengkak|luka|lemas|sesak|kejang|pingsan|cedera|memar|alergi/;
+
+function pesanMiripKeluhanKesehatan(pesan) {
+  return KATA_TERKAIT_KESEHATAN.test(normalisasi(pesan));
+}
+
+function jawabanCadanganUmum() {
+  return {
+    mode: "umum",
+    jawaban:
+      "Maaf, sistem sedang mengalami gangguan sesaat. Coba tanya ulang beberapa saat lagi ya.",
+    sumber: "cadangan",
+  };
+}
 
 function jawabanCadangan(alasan) {
   return {
@@ -327,15 +357,18 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    res.status(200).json(jawabanCadangan("GROQ_API_KEY belum diatur di Vercel."));
-    return;
-  }
-
   const body = typeof req.body === "string" ? safeParse(req.body) : req.body || {};
   const pesan = (body.pesan || "").trim();
   const riwayat = body.riwayat || [];
+
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    const fallback = pesanMiripKeluhanKesehatan(pesan)
+      ? jawabanCadangan("GROQ_API_KEY belum diatur di Vercel.")
+      : jawabanCadanganUmum();
+    res.status(200).json(fallback);
+    return;
+  }
 
   if (!pesan) {
     res.status(400).json({ error: "Pesan kosong." });
@@ -359,7 +392,10 @@ module.exports = async (req, res) => {
     res.status(200).json(hasil);
   } catch (err) {
     console.error("[healthbot]", err.message);
-    res.status(200).json(jawabanCadangan(err.message));
+    const fallback = pesanMiripKeluhanKesehatan(pesan)
+      ? jawabanCadangan(err.message)
+      : jawabanCadanganUmum();
+    res.status(200).json(fallback);
   }
 };
 
