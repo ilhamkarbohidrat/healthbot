@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HealthBot</title>
+<style>
+  :root {
+    --teal: #2f5d5a;
+    --teal-dark: #22433f;
+    --hijau: #3f8f5f;
+    --kuning: #b3862c;
+    --merah: #b23b3b;
+    --bg: #f4f4f2;
+    --border: #e4e3df;
+    --text: #1f2420;
+    --muted: #6b6f6a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  .app {
+    max-width: 760px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+  }
+  header h1 span { color: var(--teal); }
+
+  header .sub {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  #chat {
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  #empty-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 100%;
+    pointer-events: none;
+  }
+
+  #empty-state p {
+    font-size: 18px;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .bubble-user {
+    align-self: flex-end;
+    background: var(--teal);
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 14px;
+    max-width: 75%;
+    font-size: 15px;
+  }
+
+  .bubble-bot {
+    align-self: flex-start;
+    padding: 12px 18px;
+    border-radius: 14px;
+    max-width: 75%;
+    font-size: 15px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .bubble-umum {
+    background: #f0f0ee;
+    color: var(--text);
+  }
+
+  .bubble-curhat {
+    background: #fdeee0;
+    color: #6b4a2a;
+    border: 1px solid #f4d9bd;
+  }
+
+  .kartu-triase {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .kartu-triase .strip {
+    width: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-weight: 600;
+  }
+
+  .kartu-hijau .strip { background: var(--hijau); }
+  .kartu-kuning .strip { background: var(--kuning); }
+  .kartu-merah .strip { background: var(--merah); }
+
+  .kartu-triase .isi { padding: 20px 24px; flex: 1; }
+
+  .header-kartu {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .badge-aman {
+    background: #eee;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  .tab-urgensi {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    border-radius: 3px;
+    border: 1px dashed var(--border);
+  }
+
+  .tab.nonaktif {
+    color: #b7b7b3;
+    text-decoration: line-through;
+    border-style: dashed;
+  }
+
+  .tab.aktif { color: #fff; border: none; }
+  .tab.aktif.hijau { background: var(--hijau); }
+  .tab.aktif.kuning { background: var(--kuning); }
+  .tab.aktif.merah { background: var(--merah); }
+
+  .kartu-triase .ringkasan { font-size: 17px; line-height: 1.5; margin: 0 0 10px; }
+  .kartu-triase .tindakan { font-size: 15px; margin: 0 0 16px; }
+
+  .blok { margin-bottom: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .blok h4 {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .blok ul { margin: 0; padding-left: 18px; font-size: 14.5px; line-height: 1.6; }
+
+  .kartu-triase .disclaimer {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--muted);
+    margin: 12px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .chips {
+    padding: 14px 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .chip {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    cursor: pointer;
+  }
+  .chip:hover { background: #f2f2f0; }
+
+  .input-area {
+    display: flex;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  #input-keluhan {
+    flex: 1;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14.5px;
+    resize: none;
+    font-family: inherit;
+  }
+
+  #btn-periksa {
+    background: var(--teal);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0 22px;
+    font-weight: 700;
+    font-size: 14.5px;
+    cursor: pointer;
+  }
+  #btn-periksa:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  footer {
+    padding: 14px 24px 20px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--merah);
+  }
+  footer b { font-weight: 700; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Health<span>Bot</span></h1>
+    </header>
+
+    <div id="chat">
+      <div id="empty-state">
+        <p>Cerita gejala, curhat, atau tanya apa aja</p>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <textarea id="input-keluhan" rows="1" placeholder="Cerita gejala, curhat, atau tanya apa saja..."></textarea>
+      <button id="btn-periksa">Periksa</button>
+    </div>
+
+    <footer>
+      <b>Bukan alat diagnosis.</b> Penilaian ini tidak menggantikan pemeriksaan dokter. Dalam keadaan darurat hubungi <b>119</b>.
+    </footer>
+  </div>
+
+  <script src="chat.js"></script>
+</body>
+</html>
